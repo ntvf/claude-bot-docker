@@ -18,4 +18,22 @@ for MCP_FILE in "$PLUGIN_CACHE/.mcp.json" "$PLUGIN_MKT/.mcp.json"; do
   fi
 done
 
+# Configure google-surf-mcp in Claude Code global MCP settings
+GLOBAL_MCP="$HOME/.claude/mcp.json"
+if [ ! -f "$GLOBAL_MCP" ] || ! python3 -c "import json,sys; d=json.load(open('$GLOBAL_MCP')); sys.exit(0 if 'google-surf' in d.get('mcpServers',{}) else 1)" 2>/dev/null; then
+  python3 - <<'PYEOF'
+import json, os
+path = os.path.expanduser('~/.claude/mcp.json')
+try:
+    cfg = json.load(open(path))
+except Exception:
+    cfg = {}
+cfg.setdefault('mcpServers', {})['google-surf'] = {
+    'command': 'npx',
+    'args': ['-y', 'google-surf-mcp']
+}
+json.dump(cfg, open(path, 'w'), indent=2)
+PYEOF
+fi
+
 exec script -qfc "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official" /dev/null

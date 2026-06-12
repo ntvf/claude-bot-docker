@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, renameSync, realpathSync, chmodSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, renameSync, realpathSync, chmodSync, existsSync, statSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -396,6 +396,54 @@ function getClaudePid(): number | null {
 }
 
 
+function getUsageInfo(): string {
+  const projectsDir = join(homedir(), '.claude', 'projects')
+  let latestFile = ''
+  let latestMtime = 0
+  try {
+    for (const proj of readdirSync(projectsDir)) {
+      const projDir = join(projectsDir, proj)
+      try {
+        for (const f of readdirSync(projDir)) {
+          if (!f.endsWith('.jsonl')) continue
+          const fp = join(projDir, f)
+          const st = statSync(fp)
+          if (st.mtimeMs > latestMtime) { latestMtime = st.mtimeMs; latestFile = fp }
+        }
+      } catch {}
+    }
+  } catch {}
+  if (!latestFile) return 'No session data found.'
+
+  const lines = readFileSync(latestFile, 'utf8').trim().split('\n')
+  let lastUsage: Record<string, number> | null = null
+  let lastModel = ''
+  for (const line of lines.slice(-100).reverse()) {
+    try {
+      const msg = JSON.parse(line)
+      if (msg.message?.role === 'assistant' && msg.message?.usage) {
+        lastUsage = msg.message.usage
+        lastModel = msg.message.model ?? ''
+        break
+      }
+    } catch {}
+  }
+  if (!lastUsage) return 'No usage data in current session.'
+
+  const input = (lastUsage.input_tokens ?? 0) + (lastUsage.cache_read_input_tokens ?? 0) + (lastUsage.cache_creation_input_tokens ?? 0)
+  const output = lastUsage.output_tokens ?? 0
+  const cacheRead = lastUsage.cache_read_input_tokens ?? 0
+  const contextMax = 200000
+  const pct = Math.round((input / contextMax) * 100)
+  const filled = Math.round(pct / 5)
+  const bar = '█'.repeat(filled) + '░'.repeat(20 - filled)
+  const modelShort = lastModel.replace('claude-', '').replace(/-\d{8}$/, '')
+
+  return `📊 Context (${modelShort})\n${bar} ${pct}%\n` +
+    `In context: ${input.toLocaleString()} / ${contextMax.toLocaleString()} tokens\n` +
+    `Output: ${output.toLocaleString()} | Cache hit: ${cacheRead.toLocaleString()}`
+}
+
 function injectCommand(cmd: string, chatId: string, userId: string): void {
   mcp.notification({
     method: 'notifications/claude/channel',
@@ -763,7 +811,7 @@ bot.on('callback_query:data', async ctx => {
   const senderId = String(ctx.from.id)
 
   // Control buttons
-  const ctrl = /^ctrl:(stop|compact|clear|usage)$/.exec(data)
+  const ctrl = /^ctrl:(stop|compact|clear|usage|model_cancel)$/.exec(data)
   if (ctrl) {
     const access = loadAccess()
     if (!access.allowFrom.includes(senderId)) {
@@ -790,9 +838,12 @@ bot.on('callback_query:data', async ctx => {
         await ctx.reply('🆕 Clearing conversation…').catch(() => {})
         break
       case 'usage':
-        injectCommand('/usage', chatId, senderId)
-        await ctx.answerCallbackQuery({ text: '📊 Fetching…' }).catch(() => {})
-        await ctx.reply('📊 Fetching usage…').catch(() => {})
+        await ctx.answerCallbackQuery().catch(() => {})
+        await ctx.reply(getUsageInfo()).catch(() => {})
+        break
+      case 'model_cancel':
+        await ctx.answerCallbackQuery().catch(() => {})
+        await ctx.deleteMessage().catch(() => {})
         break
     }
     return
@@ -893,10 +944,7 @@ bot.command('clear', async ctx => {
 
 bot.command('usage', async ctx => {
   if (!dmCommandGate(ctx)) return
-  const chatId = String(ctx.chat!.id)
-  const userId = String(ctx.from!.id)
-  injectCommand('/usage', chatId, userId)
-  await ctx.reply('📊 Fetching usage…')
+  await ctx.reply(getUsageInfo())
 })
 
 bot.command('model', async ctx => {
@@ -906,7 +954,8 @@ bot.command('model', async ctx => {
     const keyboard = new InlineKeyboard()
       .text('Sonnet 4.6', 'model:claude-sonnet-4-6')
       .text('Opus 4.8', 'model:claude-opus-4-8').row()
-      .text('Haiku 4.5', 'model:claude-haiku-4-5-20251001')
+      .text('Haiku 4.5', 'model:claude-haiku-4-5-20251001').row()
+      .text('✗ Cancel', 'ctrl:model_cancel')
     await ctx.reply('Select model:', { reply_markup: keyboard })
     return
   }

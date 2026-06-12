@@ -3,8 +3,11 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
-    curl git ca-certificates bsdutils tmux unzip sudo \
+    curl git ca-certificates bsdutils tmux unzip sudo wget \
     python3 python3-pip \
+    ripgrep fd-find jq \
+    postgresql-client sqlite3 \
+    rsync imagemagick ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js 22 LTS
@@ -34,11 +37,28 @@ RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | gp
     && apt-get update && apt-get install -y temurin-25-jdk maven \
     && rm -rf /var/lib/apt/lists/*
 
+# yq (YAML processor)
+RUN wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+    && chmod +x /usr/local/bin/yq
+
+# GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# xh (modern HTTP client)
+RUN curl -sfL https://raw.githubusercontent.com/ducaale/xh/master/install.sh | sh
+
+# Python packages
+RUN pip3 install --break-system-packages requests httpx beautifulsoup4
+
 # Bun (required by telegram@claude-plugins-official MCP server)
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
 
-# Claude Code
-RUN npm install -g @anthropic-ai/claude-code
+# Claude Code + google-surf-mcp
+RUN npm install -g @anthropic-ai/claude-code google-surf-mcp
 
 # Non-root user with passwordless sudo — safe inside Sysbox isolation
 RUN useradd -m -s /bin/bash claude \
