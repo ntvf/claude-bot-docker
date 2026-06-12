@@ -30,7 +30,8 @@ except Exception:
     cfg = {}
 cfg.setdefault('mcpServers', {})['google-surf'] = {
     'command': 'npx',
-    'args': ['-y', 'google-surf-mcp']
+    'args': ['-y', 'google-surf-mcp'],
+    'env': {'SURF_CLOUD_MODE': 'true'}
 }
 json.dump(cfg, open(path, 'w'), indent=2)
 PYEOF

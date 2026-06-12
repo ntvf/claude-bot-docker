@@ -49,7 +49,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | g
     && rm -rf /var/lib/apt/lists/*
 
 # xh (modern HTTP client)
-RUN curl -sfL https://raw.githubusercontent.com/ducaale/xh/master/install.sh | sh
+RUN XH_VER=$(curl -sfL https://api.github.com/repos/ducaale/xh/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])") \
+    && curl -fsSL "https://github.com/ducaale/xh/releases/download/${XH_VER}/xh-${XH_VER}-x86_64-unknown-linux-musl.tar.gz" | tar -xz --strip-components=1 -C /usr/local/bin "xh-${XH_VER}-x86_64-unknown-linux-musl/xh"
 
 # Python packages
 RUN pip3 install --break-system-packages requests httpx beautifulsoup4
