@@ -1198,6 +1198,20 @@ async function handleInbound(
     return
   }
 
+  // Include reply context if this message is a reply to another message
+  const replyTo = ctx.message?.reply_to_message
+  if (replyTo) {
+    const replyText = replyTo.text ?? replyTo.caption ?? ''
+    const replyFrom = replyTo.from?.username
+      ? `@${replyTo.from.username}`
+      : (replyTo.from?.first_name ?? (replyTo.from?.is_bot ? 'bot' : 'user'))
+    if (replyText) {
+      text = `[Replying to ${replyFrom}: "${replyText}"]\n\n${text}`
+    } else {
+      text = `[Replying to ${replyFrom}'s message (no text)]\n\n${text}`
+    }
+  }
+
   // Prepend persistent goal if set
   try {
     const goal = readFileSync(GOAL_FILE, 'utf8').trim()
