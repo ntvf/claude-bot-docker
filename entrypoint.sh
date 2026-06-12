@@ -33,8 +33,12 @@ cfg.setdefault('mcpServers', {})['google-surf'] = {
 }
 # Allow the new MCP tool patterns
 cfg.setdefault('permissions', {}).setdefault('allow', [])
-if 'mcp__google-surf__*' not in cfg['permissions']['allow']:
-    cfg['permissions']['allow'].append('mcp__google-surf__*')
+allow = cfg['permissions']['allow']
+if 'mcp__google-surf__*' not in allow:
+    allow.append('mcp__google-surf__*')
+# Remove WebSearch auto-allow so Claude prefers google-surf MCP
+if 'WebSearch(*)' in allow:
+    allow.remove('WebSearch(*)')
 json.dump(cfg, open(path, 'w'), indent=2)
 PYEOF
 
@@ -46,6 +50,9 @@ cat >> "$CLAUDE_MD" <<'MDEOF'
 ## Active MCP tools
 Available MCP servers: **telegram** (reply/react/edit/download) and **google-surf** (web search).
 Gmail, Google Calendar, Google Drive channels exist in Claude Code but are NOT configured here — do not mention them, do not offer to authenticate them.
+
+## Web search
+Always use the **google-surf MCP** for web searches. Do not use the built-in WebSearch tool.
 MDEOF
 fi
 
