@@ -44,12 +44,16 @@ RUN npm install -g @anthropic-ai/claude-code
 RUN useradd -m -s /bin/bash claude \
     && echo "claude ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+# Patched plugin server + entrypoint
+COPY server-patch.ts /opt/server-patch.ts
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 USER claude
 WORKDIR /home/claude
 
 # Persist Claude state: credentials, plugin cache, conversation history
 VOLUME ["/home/claude"]
 
-# Start Claude Code with the official Telegram channel plugin.
-# The plugin MCP server (bun server.ts) is spawned automatically.
-CMD ["script", "-qfc", "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official", "/dev/null"]
+# Entrypoint applies the patched server.ts then starts Claude with Telegram channel
+CMD ["/entrypoint.sh"]

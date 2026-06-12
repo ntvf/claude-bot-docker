@@ -4,40 +4,33 @@ Secure Docker image for running [Claude Code](https://claude.ai/code) as a persi
 
 ## Features
 
-- **Secure isolation** — runs via [Sysbox](https://github.com/nestybox/sysbox) (`sysbox-runc`) for true container isolation without `--privileged`
-- **Persistent state** — Claude credentials, plugin cache, and conversation history survive restarts via a named volume
-- **Telegram bridge** — uses the official `telegram@claude-plugins-official` plugin
-- **Chromium ready** — all Playwright/Chromium system libs pre-installed
-- **Non-root** — Claude runs as a non-root user (required for `--dangerously-skip-permissions`)
+- **Secure isolation** — [Sysbox](https://github.com/nestybox/sysbox) runtime, no `--privileged`
+- **Persistent state** — credentials, plugin cache, history survive rebuilds via named volume
+- **Extended Telegram bot** with control commands and inline action buttons after every reply
+- **Chromium + Playwright** system libs pre-installed
+- **Java 25 + Maven** available
+- **Passwordless sudo** — Claude can install system packages (`sudo apt-get install`)
+- **Auto-update** — GitHub webhook triggers rebuild + restart on push to `main`
 
-## Requirements
+## Bot commands
 
-- Docker with [Sysbox](https://github.com/nestybox/sysbox) runtime installed
-- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+| Command | Description |
+|---------|-------------|
+| `/stop` | ⏹ Interrupt current task (SIGINT) |
+| `/compact` | 🗜 Compact the context window |
+| `/clear` | 🆕 Clear conversation history |
+| `/usage` | 📊 Context window % and token counts |
+| `/model` | Switch model (sonnet / opus / haiku) |
+| `/goal <text>` | 🎯 Set persistent goal prepended to every message |
+| `/goal clear` | Remove the current goal |
+| `/status` | Check pairing state |
 
-## Setup
+Every Claude reply includes **[⏹ Stop] [🗜 Compact] [🆕 Clear] [📊 Usage]** inline buttons.
 
-```bash
-# 1. Build
-docker compose build
-
-# 2. First-time interactive setup (authenticate + install plugin)
-docker run -it --rm --runtime=sysbox-runc -v claude-bot-docker_claude-home:/home/claude claude-bot-docker-claude-telegram claude
-
-# Inside Claude:
-# > /plugin install telegram@claude-plugins-official
-# > /telegram:configure <YOUR_BOT_TOKEN>
-# Exit, then DM your bot — it replies with a pairing code
-# Re-enter and: /telegram:access pair <code>
-# > /telegram:access policy allowlist
-
-# 3. Start as daemon
-docker compose up -d
-```
-
-## Persistent service (systemd)
+## Systemd service
 
 ```ini
+# /etc/systemd/system/claude-telegram.service
 [Unit]
 Description=Claude Code Telegram Bot
 Requires=docker.service
@@ -51,23 +44,60 @@ ExecStart=/usr/bin/docker run --rm --runtime=sysbox-runc \
   --name claude-telegram \
   --memory=4g \
   --pids-limit=500 \
-  -v claude-bot-docker_claude-home:/home/claude \
-  claude-bot-docker-claude-telegram:latest
+  -v claude-telegram_claude-home:/home/claude \
+  claude-telegram-claude-telegram:latest
 ExecStop=/usr/bin/docker stop claude-telegram
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-## Update bot token
+## Auto-update (GitHub webhook)
+
+Pushes to `main` automatically rebuild the image and restart the service.
 
 ```bash
-# Enter the running container and reconfigure
-docker exec -it claude-telegram claude
-# Then: /telegram:configure <NEW_TOKEN>
+# 1. Copy auto-update files
+cp auto-update/claude-telegram-updater.service /etc/systemd/system/
+cp auto-update/.env.example /opt/claude-telegram/auto-update/.env
+# Edit .env — set GITHUB_WEBHOOK_SECRET
+
+# 2. Enable
+systemctl enable --now claude-telegram-updater
+
+# 3. GitHub repo → Settings → Webhooks
+#    URL: http://<server-ip>:9876/webhook
+#    Content type: application/json
+#    Secret: same as GITHUB_WEBHOOK_SECRET
+#    Event: push
+```
+
+**Is it safe?** The webhook verifies GitHub's HMAC signature. Only pushes from your repo trigger a rebuild. Since the container runs in Sysbox, a malicious Dockerfile `RUN` step can't escape to the host — but it could still run arbitrary commands during `docker build` on the host layer. Keep your repo access controlled.
+
+## First-time setup
+
+```bash
+# Build
+docker build -t claude-telegram-claude-telegram:latest .
+
+# One-time interactive setup — authenticate Claude and install the Telegram plugin
+docker run -it --rm --runtime=sysbox-runc \
+  -v claude-telegram_claude-home:/home/claude \
+  claude-telegram-claude-telegram:latest bash
+
+# Inside: run `claude`, then:
+#   /plugin install telegram@claude-plugins-official
+#   /telegram:configure <BOT_TOKEN>
+# Exit, DM your bot, get the pairing code, re-enter and:
+#   /telegram:access pair <code>
+#   /telegram:access policy allowlist
+
+# Start
+systemctl start claude-telegram
 ```
 
 ## Notes
 
-- `CLAUDE.md` at `/home/claude/CLAUDE.md` is auto-loaded — use it to give Claude environment-specific instructions (e.g. Playwright `--no-sandbox` flag)
-- Chromium launched via Playwright must use `--no-sandbox` and `--disable-dev-shm-usage` inside the container
+- `CLAUDE.md` at `/home/claude/CLAUDE.md` is auto-loaded — use it for environment-specific instructions
+- Chromium via Playwright must use `--no-sandbox` and `--disable-dev-shm-usage` inside the container
+- `sudo apt-get update && sudo apt-get install -y <pkg>` works (apt cache is cleared in image build)
