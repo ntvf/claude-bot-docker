@@ -444,6 +444,22 @@ function getUsageInfo(): string {
     `Output: ${output.toLocaleString()} | Cache hit: ${cacheRead.toLocaleString()}`
 }
 
+function killAndRestart(): void {
+  const pid = getClaudePid()
+  if (pid) { try { process.kill(pid, 'SIGKILL') } catch {} }
+  // Fallback: kill own parent (script wrapper) so systemd restarts the container
+  setTimeout(() => { try { process.kill(process.ppid, 'SIGKILL') } catch {} }, 500)
+}
+
+function setModel(model: string): void {
+  const settingsPath = join(homedir(), '.claude', 'settings.json')
+  try {
+    const cfg = JSON.parse(readFileSync(settingsPath, 'utf8'))
+    cfg.model = model
+    writeFileSync(settingsPath, JSON.stringify(cfg, null, 2) + '\n')
+  } catch {}
+}
+
 function injectCommand(cmd: string, chatId: string, userId: string): void {
   mcp.notification({
     method: 'notifications/claude/channel',
@@ -828,14 +844,14 @@ bot.on('callback_query:data', async ctx => {
         break
       }
       case 'compact':
-        injectCommand('/compact', chatId, senderId)
+        injectCommand('Summarize our conversation so far into a brief context note (3 sentences max), then confirm ready for next task.', chatId, senderId)
         await ctx.answerCallbackQuery({ text: '🗜 Compacting…' }).catch(() => {})
-        await ctx.reply('🗜 Compacting context…').catch(() => {})
+        await ctx.reply('🗜 Asking Claude to compact context…').catch(() => {})
         break
       case 'clear':
-        injectCommand('/clear', chatId, senderId)
-        await ctx.answerCallbackQuery({ text: '🆕 Clearing…' }).catch(() => {})
-        await ctx.reply('🆕 Clearing conversation…').catch(() => {})
+        await ctx.answerCallbackQuery({ text: '🆕 Restarting…' }).catch(() => {})
+        await ctx.reply('🆕 Clearing session — restarting…').catch(() => {})
+        killAndRestart()
         break
       case 'usage':
         await ctx.answerCallbackQuery().catch(() => {})
@@ -857,11 +873,11 @@ bot.on('callback_query:data', async ctx => {
       await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
       return
     }
-    const chatId = String(ctx.chat?.id ?? senderId)
     const model = modelBtn[1]!
-    injectCommand(`/model ${model}`, chatId, senderId)
+    setModel(model)
     await ctx.answerCallbackQuery({ text: `Switching to ${model}` }).catch(() => {})
-    await ctx.editMessageText(`Switching to ${model}…`).catch(() => {})
+    await ctx.editMessageText(`Switching to ${model} — restarting session…`).catch(() => {})
+    killAndRestart()
     return
   }
 
@@ -930,16 +946,14 @@ bot.command('compact', async ctx => {
   if (!dmCommandGate(ctx)) return
   const chatId = String(ctx.chat!.id)
   const userId = String(ctx.from!.id)
-  injectCommand('/compact', chatId, userId)
-  await ctx.reply('🗜 Compacting context…')
+  injectCommand('Summarize our conversation so far into a brief context note (3 sentences max), then confirm ready for next task.', chatId, userId)
+  await ctx.reply('🗜 Asking Claude to compact context…')
 })
 
 bot.command('clear', async ctx => {
   if (!dmCommandGate(ctx)) return
-  const chatId = String(ctx.chat!.id)
-  const userId = String(ctx.from!.id)
-  injectCommand('/clear', chatId, userId)
-  await ctx.reply('🆕 Clearing conversation…')
+  await ctx.reply('🆕 Clearing session — restarting…')
+  killAndRestart()
 })
 
 bot.command('usage', async ctx => {
@@ -965,10 +979,9 @@ bot.command('model', async ctx => {
     haiku: 'claude-haiku-4-5-20251001',
   }
   const model = shortcuts[arg.toLowerCase()] ?? arg
-  const chatId = String(ctx.chat!.id)
-  const userId = String(ctx.from!.id)
-  injectCommand(`/model ${model}`, chatId, userId)
-  await ctx.reply(`Switching to ${model}…`)
+  setModel(model)
+  await ctx.reply(`Switching to ${model} — restarting session…`)
+  killAndRestart()
 })
 
 const GOAL_FILE = join(STATE_DIR, 'goal.txt')
