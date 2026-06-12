@@ -18,12 +18,10 @@ for MCP_FILE in "$PLUGIN_CACHE/.mcp.json" "$PLUGIN_MKT/.mcp.json"; do
   fi
 done
 
-# Configure google-surf-mcp in Claude Code global MCP settings
-GLOBAL_MCP="$HOME/.claude/mcp.json"
-if [ ! -f "$GLOBAL_MCP" ] || ! python3 -c "import json,sys; d=json.load(open('$GLOBAL_MCP')); sys.exit(0 if 'google-surf' in d.get('mcpServers',{}) else 1)" 2>/dev/null; then
-  python3 - <<'PYEOF'
+# Inject google-surf-mcp into settings.json mcpServers
+python3 - <<'PYEOF'
 import json, os
-path = os.path.expanduser('~/.claude/mcp.json')
+path = os.path.expanduser('~/.claude/settings.json')
 try:
     cfg = json.load(open(path))
 except Exception:
@@ -33,8 +31,11 @@ cfg.setdefault('mcpServers', {})['google-surf'] = {
     'args': ['-y', 'google-surf-mcp'],
     'env': {'SURF_CLOUD_MODE': 'true'}
 }
+# Allow the new MCP tool patterns
+cfg.setdefault('permissions', {}).setdefault('allow', [])
+if 'mcp__google-surf__*' not in cfg['permissions']['allow']:
+    cfg['permissions']['allow'].append('mcp__google-surf__*')
 json.dump(cfg, open(path, 'w'), indent=2)
 PYEOF
-fi
 
 exec script -qfc "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official" /dev/null
