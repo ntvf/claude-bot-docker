@@ -837,15 +837,10 @@ bot.on('callback_query:data', async ctx => {
         await ctx.answerCallbackQuery({ text: '🆕 Clearing…' }).catch(() => {})
         await ctx.reply('🆕 Clearing conversation…').catch(() => {})
         break
-      case 'usage': {
+      case 'usage':
         await ctx.answerCallbackQuery().catch(() => {})
         await ctx.reply(getUsageInfo()).catch(() => {})
-        injectCommand(
-          `[System request — do not explain, just reply] Run /usage internally and reply to chat_id ${chatId} with the full output including session and weekly rate limit percentages and reset times. Use the reply tool.`,
-          chatId, senderId,
-        )
         break
-      }
       case 'model_cancel':
         await ctx.answerCallbackQuery().catch(() => {})
         await ctx.deleteMessage().catch(() => {})
@@ -949,14 +944,7 @@ bot.command('clear', async ctx => {
 
 bot.command('usage', async ctx => {
   if (!dmCommandGate(ctx)) return
-  const chatId = String(ctx.chat!.id)
-  const userId = String(ctx.from!.id)
-  // Show local context stats immediately, then ask Claude for full rate-limit data
   await ctx.reply(getUsageInfo())
-  injectCommand(
-    `[System request — do not explain, just reply] Run /usage internally and reply to chat_id ${chatId} with the full output including session and weekly rate limit percentages and reset times. Use the reply tool.`,
-    chatId, userId,
-  )
 })
 
 bot.command('model', async ctx => {
