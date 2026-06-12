@@ -380,6 +380,54 @@ function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[
 // everything else goes as documents (raw file, no compression).
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp'])
 
+// ─── Markdown → MarkdownV2 auto-converter ────────────────────────────────────
+// Converts Claude's natural markdown output to Telegram MarkdownV2.
+// Applied automatically to every reply so formatting always renders.
+
+function toMarkdownV2(text: string): string {
+  // Escape all MarkdownV2 special chars except in formatted regions
+  const esc = (s: string) => s.replace(/([_*[\]()~`>#+=|{}.!\-\\])/g, '\\$1')
+
+  // Split on ``` code fences first; process each segment independently
+  const fenceRe = /```([\w]*)\n?([\s\S]*?)```/g
+  const segments: Array<{ kind: 'fence'; lang: string; body: string } | { kind: 'text'; body: string }> = []
+  let cursor = 0, m: RegExpExecArray | null
+  while ((m = fenceRe.exec(text)) !== null) {
+    if (m.index > cursor) segments.push({ kind: 'text', body: text.slice(cursor, m.index) })
+    segments.push({ kind: 'fence', lang: m[1] ?? '', body: m[2] ?? '' })
+    cursor = m.index + m[0].length
+  }
+  if (cursor < text.length) segments.push({ kind: 'text', body: text.slice(cursor) })
+
+  return segments.map(seg => {
+    if (seg.kind === 'fence') {
+      // Escape only backticks and backslashes inside the fence
+      const inner = seg.body.replace(/\\/g, '\\\\').replace(/`/g, '\\`')
+      return `\`\`\`${seg.lang}\n${inner}\`\`\``
+    }
+
+    // Text segment: protect inline code, then convert markdown, then escape rest
+    let t = seg.body
+    const saved: string[] = []
+    const save = (s: string) => { const k = `\x01${saved.length}\x01`; saved.push(s); return k }
+
+    // Protect inline code
+    t = t.replace(/`([^`\n]+)`/g, (_, inner) =>
+      save(`\`${inner.replace(/\\/g, '\\\\').replace(/`/g, '\\`')}\``))
+
+    // Bold: **text** or __text__ → *escaped*
+    t = t.replace(/\*\*([^*\n]+)\*\*/g, (_, inner) => save(`*${esc(inner)}*`))
+    t = t.replace(/__([^_\n]+)__/g, (_, inner) => save(`*${esc(inner)}*`))
+
+    // Italic: _text_ → _escaped_ (skip bare *text* to avoid false positives)
+    t = t.replace(/(?<![_\w])_([^_\n]+)_(?![_\w])/g, (_, inner) => save(`_${esc(inner)}_`))
+
+    // Escape everything remaining, then restore saved
+    t = esc(t)
+    return t.replace(/\x01(\d+)\x01/g, (_, i) => saved[+i])
+  }).join('')
+}
+
 // ─── Control helpers ──────────────────────────────────────────────────────────
 
 function getClaudePid(): number | null {
@@ -599,7 +647,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           format: {
             type: 'string',
             enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            description: "Default 'auto': your markdown (**bold**, `code`, ```blocks```) is auto-converted to MarkdownV2. Use 'text' for plain content. Use 'markdownv2' only if you handle all escaping yourself.",
           },
         },
         required: ['chat_id', 'text'],
@@ -641,7 +689,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
           format: {
             type: 'string',
             enum: ['text', 'markdownv2'],
-            description: "Rendering mode. 'markdownv2' enables Telegram formatting (bold, italic, code, links). Caller must escape special chars per MarkdownV2 rules. Default: 'text' (plain, no escaping needed).",
+            description: "Default 'auto': your markdown (**bold**, `code`, ```blocks```) is auto-converted to MarkdownV2. Use 'text' for plain content. Use 'markdownv2' only if you handle all escaping yourself.",
           },
         },
         required: ['chat_id', 'message_id', 'text'],
@@ -659,8 +707,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         const text = args.text as string
         const reply_to = args.reply_to != null ? Number(args.reply_to) : undefined
         const files = (args.files as string[] | undefined) ?? []
-        const format = (args.format as string | undefined) ?? 'text'
-        const parseMode = format === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const format = (args.format as string | undefined) ?? 'auto'
+        // 'auto': convert Claude's markdown to MarkdownV2 automatically
+        // 'markdownv2': pass through as-is (Claude handled escaping)
+        // 'text': plain text, no escaping
+        const parseMode = (format === 'markdownv2' || format === 'auto') ? 'MarkdownV2' as const : undefined
 
         assertAllowedChat(chat_id)
 
@@ -674,9 +725,12 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
         const access = loadAccess()
         const limit = Math.max(1, Math.min(access.textChunkLimit ?? MAX_CHUNK_LIMIT, MAX_CHUNK_LIMIT))
-        const mode = access.chunkMode ?? 'length'
+        // For markdown, always split at paragraph/line boundaries to avoid breaking formatting
+        const mode = format === 'text' ? (access.chunkMode ?? 'length') : 'newline'
         const replyMode = access.replyToMode ?? 'first'
-        const chunks = chunk(text, limit, mode)
+        // Auto-convert markdown to MarkdownV2 before chunking
+        const sendText = format === 'auto' ? toMarkdownV2(text) : text
+        const chunks = chunk(sendText, limit, mode)
         const sentIds: number[] = []
 
         try {

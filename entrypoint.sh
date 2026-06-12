@@ -63,7 +63,7 @@ if ! grep -q 'Formatting' "$CLAUDE_MD" 2>/dev/null; then
 cat >> "$CLAUDE_MD" <<'MDEOF'
 
 ## Formatting
-Use `format: "markdownv2"` in the reply tool for any response that contains code, lists, headers, or structured content. Telegram renders MarkdownV2: `*bold*`, `_italic_`, `` `inline code` ``, triple-backtick code blocks with language tag. Escape all literal special chars (`_*[]()~\`>#+-=|{}.!`) with a backslash when they appear outside formatting. For plain prose with no formatting, omit the format param (defaults to plain text).
+Every reply is auto-converted to Telegram MarkdownV2 — just write normal markdown. Use `**bold**`, `_italic_`, `` `code` ``, triple-backtick code blocks. Do NOT set `format` in the reply tool unless you have a specific reason (default 'auto' handles conversion). Use `format: "text"` only for content that should be completely literal.
 MDEOF
 fi
 
