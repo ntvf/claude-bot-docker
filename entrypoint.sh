@@ -43,14 +43,14 @@ if 'WebSearch(*)' in allow:
     allow.remove('WebSearch(*)')
 json.dump(cfg, open(path, 'w'), indent=2)
 
-# mcp.json (separate file Claude also reads)
+# mcp.json — remove google-surf (settings.json is authoritative; dual entry breaks bun)
 mcp_path = os.path.expanduser('~/.claude/mcp.json')
 try:
     mcp = json.load(open(mcp_path))
+    mcp.get('mcpServers', {}).pop('google-surf', None)
+    json.dump(mcp, open(mcp_path, 'w'), indent=2)
 except Exception:
-    mcp = {}
-mcp.setdefault('mcpServers', {})['google-surf'] = SURF_ENTRY
-json.dump(mcp, open(mcp_path, 'w'), indent=2)
+    pass
 PYEOF
 
 # Ensure CLAUDE.md has correct environment notes (idempotent per section)
