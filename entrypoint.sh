@@ -59,6 +59,13 @@ ALWAYS use the **google-surf MCP** (`mcp__google-surf__search`) for any web sear
 NEVER use the built-in WebSearch tool — it is disabled. If google-surf is not yet connected, wait or inform the user rather than falling back to WebSearch.
 MDEOF
 fi
+if ! grep -q 'Formatting' "$CLAUDE_MD" 2>/dev/null; then
+cat >> "$CLAUDE_MD" <<'MDEOF'
+
+## Formatting
+Use `format: "markdownv2"` in the reply tool for any response that contains code, lists, headers, or structured content. Telegram renders MarkdownV2: `*bold*`, `_italic_`, `` `inline code` ``, triple-backtick code blocks with language tag. Escape all literal special chars (`_*[]()~\`>#+-=|{}.!`) with a backslash when they appear outside formatting. For plain prose with no formatting, omit the format param (defaults to plain text).
+MDEOF
+fi
 
 # Pre-warm google-surf-mcp headless Chrome profile (first boot only, takes ~35s)
 if [ ! -d "$HOME/.google-surf-mcp" ]; then

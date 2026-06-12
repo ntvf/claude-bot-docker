@@ -672,10 +672,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
-            const sent = await bot.api.sendMessage(chat_id, chunks[i], {
-              ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
-              ...(parseMode ? { parse_mode: parseMode } : {}),
-            })
+            const baseOpts = shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}
+            let sent
+            if (parseMode) {
+              try {
+                sent = await bot.api.sendMessage(chat_id, chunks[i], { ...baseOpts, parse_mode: parseMode })
+              } catch (mdErr) {
+                // MarkdownV2 parse error — fall back to plain text
+                const isParseErr = mdErr instanceof GrammyError && mdErr.error_code === 400
+                if (!isParseErr) throw mdErr
+                sent = await bot.api.sendMessage(chat_id, chunks[i], baseOpts)
+              }
+            } else {
+              sent = await bot.api.sendMessage(chat_id, chunks[i], baseOpts)
+            }
             sentIds.push(sent.message_id)
           }
         } catch (err) {
@@ -1298,11 +1308,9 @@ void (async () => {
               { command: 'help', description: 'What this bot can do' },
               { command: 'status', description: 'Check your pairing status' },
               { command: 'stop', description: '⏹ Interrupt current task' },
-              { command: 'compact', description: '🗜 Compact context window' },
               { command: 'clear', description: '🆕 Clear conversation' },
               { command: 'usage', description: '📊 Show context/token usage' },
               { command: 'model', description: 'Switch model (sonnet/opus/haiku)' },
-              { command: 'goal', description: '🎯 Set persistent goal context' },
             ],
             { scope: { type: 'all_private_chats' } },
           ).catch(() => {})
