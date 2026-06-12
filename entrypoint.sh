@@ -49,7 +49,6 @@ cat >> "$CLAUDE_MD" <<'MDEOF'
 
 ## Active MCP tools
 Available MCP servers: **telegram** (reply/react/edit/download) and **google-surf** (web search).
-Gmail, Google Calendar, Google Drive channels exist in Claude Code but are NOT configured here — do not mention them, do not offer to authenticate them.
 
 ## Web search
 Always use the **google-surf MCP** for web searches. Do not use the built-in WebSearch tool.
