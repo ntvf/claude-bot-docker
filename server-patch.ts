@@ -875,7 +875,6 @@ bot.on('callback_query:data', async ctx => {
     return
   }
   const access = loadAccess()
-  const senderId = String(ctx.from.id)
   if (!access.allowFrom.includes(senderId)) {
     await ctx.answerCallbackQuery({ text: 'Not authorized.' }).catch(() => {})
     return
