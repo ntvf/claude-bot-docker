@@ -68,13 +68,18 @@ MDEOF
 fi
 
 # Pre-warm google-surf-mcp headless Chrome profile (first boot only, takes ~35s)
-if [ ! -d "$HOME/.google-surf-mcp" ]; then
-  echo "[entrypoint] Pre-warming google-surf-mcp profile (~35s)…"
+if [ ! -d "$HOME/.google-surf-mcp/main" ]; then
+  echo "[entrypoint] Pre-warming google-surf-mcp profile (waiting up to 60s)…"
   npx google-surf-mcp &
   SURF_PID=$!
-  sleep 40
+  for i in $(seq 1 30); do
+    sleep 2
+    if [ -d "$HOME/.google-surf-mcp/main" ]; then
+      echo "[entrypoint] google-surf-mcp profile ready after $((i*2))s"
+      break
+    fi
+  done
   kill "$SURF_PID" 2>/dev/null || true
-  echo "[entrypoint] google-surf-mcp profile ready"
 fi
 
 while true; do
