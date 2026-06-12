@@ -485,6 +485,8 @@ const thinkingMessages = new Map<string, number>()
 const THINKING_WORDS = [
   'Scurrying', 'Cooking', 'Pondering', 'Brewing', 'Crafting',
   'Scheming', 'Conjuring', 'Mulling', 'Wrangling', 'Spelunking',
+  'Wibbling', 'Cogitating', 'Noodling', 'Ruminating', 'Percolating',
+  'Finagling', 'Kibbling', 'Woolgathering', 'Simmering', 'Marinating',
 ]
 
 function setModel(model: string): void {
