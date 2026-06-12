@@ -965,12 +965,17 @@ bot.command('model', async ctx => {
   if (!dmCommandGate(ctx)) return
   const arg = ctx.match?.trim()
   if (!arg) {
+    let current = 'unknown'
+    try {
+      const cfg = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8'))
+      if (cfg.model) current = cfg.model.replace('claude-', '').replace(/-\d{8}$/, '')
+    } catch {}
     const keyboard = new InlineKeyboard()
       .text('Sonnet 4.6', 'model:claude-sonnet-4-6')
       .text('Opus 4.8', 'model:claude-opus-4-8').row()
       .text('Haiku 4.5', 'model:claude-haiku-4-5-20251001').row()
       .text('✗ Cancel', 'ctrl:model_cancel')
-    await ctx.reply('Select model:', { reply_markup: keyboard })
+    await ctx.reply(`Current: ${current}\nSelect model:`, { reply_markup: keyboard })
     return
   }
   const shortcuts: Record<string, string> = {
