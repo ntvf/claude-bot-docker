@@ -27,8 +27,8 @@ try:
 except Exception:
     cfg = {}
 cfg.setdefault('mcpServers', {})['google-surf'] = {
-    'command': 'npx',
-    'args': ['-y', 'google-surf-mcp'],
+    'command': '/usr/bin/google-surf-mcp',
+    'args': [],
     'env': {'SURF_CLOUD_MODE': 'true'}
 }
 # Allow the new MCP tool patterns
@@ -67,20 +67,6 @@ Use `format: "markdownv2"` in the reply tool for any response that contains code
 MDEOF
 fi
 
-# Pre-warm google-surf-mcp headless Chrome profile (first boot only, takes ~35s)
-if [ ! -d "$HOME/.google-surf-mcp/main" ]; then
-  echo "[entrypoint] Pre-warming google-surf-mcp profile (waiting up to 60s)…"
-  npx google-surf-mcp &
-  SURF_PID=$!
-  for i in $(seq 1 30); do
-    sleep 2
-    if [ -d "$HOME/.google-surf-mcp/main" ]; then
-      echo "[entrypoint] google-surf-mcp profile ready after $((i*2))s"
-      break
-    fi
-  done
-  kill "$SURF_PID" 2>/dev/null || true
-fi
 
 while true; do
   script -qfc "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official" /dev/null
