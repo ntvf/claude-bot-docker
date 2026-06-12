@@ -34,11 +34,10 @@ try:
     cfg = json.load(open(path))
 except Exception:
     cfg = {}
-cfg.setdefault('mcpServers', {})['google-surf'] = SURF_ENTRY
+# google-surf removed — blocks Claude MCP init causing bun to never start
+cfg.get('mcpServers', {}).pop('google-surf', None)
 cfg.setdefault('permissions', {}).setdefault('allow', [])
 allow = cfg['permissions']['allow']
-if 'mcp__google-surf__*' not in allow:
-    allow.append('mcp__google-surf__*')
 if 'WebSearch(*)' in allow:
     allow.remove('WebSearch(*)')
 json.dump(cfg, open(path, 'w'), indent=2)
