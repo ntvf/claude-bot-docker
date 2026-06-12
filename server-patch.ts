@@ -489,6 +489,8 @@ const THINKING_WORDS = [
   'Finagling', 'Kibbling', 'Woolgathering', 'Simmering', 'Marinating',
 ]
 
+const THINKING_EMOJI = ['🌀', '⚙️', '🔮', '✨', '🧠', '💫', '🪄', '🔥', '⚡', '🫧', '🎲', '🌊', '🎯', '🪩', '💥']
+
 function setModel(model: string): void {
   const settingsPath = join(homedir(), '.claude', 'settings.json')
   try {
@@ -1258,7 +1260,8 @@ async function handleInbound(
   // Typing indicator + thinking placeholder
   void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
   const word = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]
-  void bot.api.sendMessage(chat_id, `${word}…`).then(m => {
+  const emoji = THINKING_EMOJI[Math.floor(Math.random() * THINKING_EMOJI.length)]
+  void bot.api.sendMessage(chat_id, `${word}… ${emoji}`).then(m => {
     thinkingMessages.set(chat_id, m.message_id)
   }).catch(() => {})
 
