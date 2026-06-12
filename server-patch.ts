@@ -398,13 +398,26 @@ function getClaudePid(): number | null {
 
 
 function getUsageInfo(): string {
-  // Rate limits from claude CLI
+  // Rate limits from claude CLI — use isolated HOME so no MCP servers start
   let rateLimitsText = ''
+  const tmpHome = `/tmp/claude-usage-${process.pid}`
   try {
+    const tmpClaude = join(tmpHome, '.claude')
+    mkdirSync(tmpClaude, { recursive: true })
+    // Copy credentials so auth works
+    try {
+      writeFileSync(
+        join(tmpClaude, '.credentials.json'),
+        readFileSync(join(homedir(), '.claude', '.credentials.json'), 'utf8'),
+      )
+    } catch {}
+    // Empty settings — no MCP servers, so no new bun instance spawns
+    writeFileSync(join(tmpClaude, 'settings.json'), '{"autoUpdaterStatus":"disabled"}')
+
     const raw = execSync('claude -p /usage 2>&1', {
       timeout: 10000,
       encoding: 'utf8',
-      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+      env: { ...process.env, HOME: tmpHome, NO_COLOR: '1', FORCE_COLOR: '0' },
     })
     const clean = raw.replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, '')
     const sessionMatch = clean.match(/Current session:\s*(.+)/)
@@ -416,6 +429,7 @@ function getUsageInfo(): string {
       rateLimitsText = parts.join('\n')
     }
   } catch {}
+  try { rmSync(tmpHome, { recursive: true, force: true }) } catch {}
 
   // Context window from JSONL
   const projectsDir = join(homedir(), '.claude', 'projects')
