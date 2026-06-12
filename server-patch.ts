@@ -418,10 +418,10 @@ function getUsageInfo(): string {
     }
   } catch {}
 
-  // Context window from JSONL
+  // Context window from JSONL — collect all files sorted newest-first,
+  // then pick the first one that actually has assistant usage data
   const projectsDir = join(homedir(), '.claude', 'projects')
-  let latestFile = ''
-  let latestMtime = 0
+  const allJsonl: { fp: string; mtime: number }[] = []
   try {
     for (const proj of readdirSync(projectsDir)) {
       const projDir = join(projectsDir, proj)
@@ -429,29 +429,30 @@ function getUsageInfo(): string {
         for (const f of readdirSync(projDir)) {
           if (!f.endsWith('.jsonl')) continue
           const fp = join(projDir, f)
-          const st = statSync(fp)
-          if (st.mtimeMs > latestMtime) { latestMtime = st.mtimeMs; latestFile = fp }
+          try { allJsonl.push({ fp, mtime: statSync(fp).mtimeMs }) } catch {}
         }
       } catch {}
     }
   } catch {}
+  allJsonl.sort((a, b) => b.mtime - a.mtime)
 
   let contextPart = ''
-  if (latestFile) {
-    const lines = readFileSync(latestFile, 'utf8').trim().split('\n')
-    let lastUsage: Record<string, number> | null = null
-    let lastModel = ''
-    for (const line of lines.slice(-100).reverse()) {
-      try {
-        const msg = JSON.parse(line)
-        if (msg.message?.role === 'assistant' && msg.message?.usage) {
-          lastUsage = msg.message.usage
-          lastModel = msg.message.model ?? ''
-          break
-        }
-      } catch {}
-    }
-    if (lastUsage) {
+  for (const { fp } of allJsonl) {
+    try {
+      const lines = readFileSync(fp, 'utf8').trim().split('\n')
+      let lastUsage: Record<string, number> | null = null
+      let lastModel = ''
+      for (const line of lines.slice(-100).reverse()) {
+        try {
+          const msg = JSON.parse(line)
+          if (msg.message?.role === 'assistant' && msg.message?.usage) {
+            lastUsage = msg.message.usage
+            lastModel = msg.message.model ?? ''
+            break
+          }
+        } catch {}
+      }
+      if (!lastUsage) continue
       const input = (lastUsage.input_tokens ?? 0) + (lastUsage.cache_read_input_tokens ?? 0) + (lastUsage.cache_creation_input_tokens ?? 0)
       const output = lastUsage.output_tokens ?? 0
       const cacheRead = lastUsage.cache_read_input_tokens ?? 0
@@ -463,7 +464,8 @@ function getUsageInfo(): string {
       contextPart = `📊 Context (${modelShort})\n${bar} ${pct}%\n` +
         `In context: ${input.toLocaleString()} / ${contextMax.toLocaleString()} tokens\n` +
         `Output: ${output.toLocaleString()} | Cache hit: ${cacheRead.toLocaleString()}`
-    }
+      break
+    } catch {}
   }
 
   return [rateLimitsText, contextPart].filter(Boolean).join('\n\n') || 'No usage data available.'
