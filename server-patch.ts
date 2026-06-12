@@ -478,6 +478,15 @@ function killAndRestart(): void {
   setTimeout(() => { process.exit(0) }, 500)
 }
 
+// Placeholder "thinking" messages — chat_id → message_id.
+// Sent immediately on inbound; first reply chunk edits instead of sending new.
+const thinkingMessages = new Map<string, number>()
+
+const THINKING_WORDS = [
+  'Scurrying', 'Cooking', 'Pondering', 'Brewing', 'Crafting',
+  'Scheming', 'Conjuring', 'Mulling', 'Wrangling', 'Spelunking',
+]
+
 function setModel(model: string): void {
   const settingsPath = join(homedir(), '.claude', 'settings.json')
   try {
@@ -674,17 +683,33 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               (replyMode === 'all' || i === 0)
             const baseOpts = shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}
             let sent
-            if (parseMode) {
+            // For the first chunk, edit the thinking placeholder if present
+            const thinkingId = i === 0 ? thinkingMessages.get(chat_id) : undefined
+            if (thinkingId) thinkingMessages.delete(chat_id)
+            if (thinkingId) {
               try {
-                sent = await bot.api.sendMessage(chat_id, chunks[i], { ...baseOpts, parse_mode: parseMode })
-              } catch (mdErr) {
-                // MarkdownV2 parse error — fall back to plain text
-                const isParseErr = mdErr instanceof GrammyError && mdErr.error_code === 400
-                if (!isParseErr) throw mdErr
+                const edited = await bot.api.editMessageText(
+                  chat_id, thinkingId, chunks[i],
+                  ...(parseMode ? [{ parse_mode: parseMode }] : []),
+                )
+                sent = typeof edited === 'object' ? edited : { message_id: thinkingId }
+              } catch {
+                // Edit failed (message too old, etc.) — fall through to send
+                sent = null
+              }
+            }
+            if (!sent) {
+              if (parseMode) {
+                try {
+                  sent = await bot.api.sendMessage(chat_id, chunks[i], { ...baseOpts, parse_mode: parseMode })
+                } catch (mdErr) {
+                  const isParseErr = mdErr instanceof GrammyError && mdErr.error_code === 400
+                  if (!isParseErr) throw mdErr
+                  sent = await bot.api.sendMessage(chat_id, chunks[i], baseOpts)
+                }
+              } else {
                 sent = await bot.api.sendMessage(chat_id, chunks[i], baseOpts)
               }
-            } else {
-              sent = await bot.api.sendMessage(chat_id, chunks[i], baseOpts)
             }
             sentIds.push(sent.message_id)
           }
@@ -1228,8 +1253,12 @@ async function handleInbound(
     if (goal) text = `[Goal: ${goal}]\n\n${text}`
   } catch {}
 
-  // Typing indicator — signals "processing" until we reply (or ~5s elapses).
+  // Typing indicator + thinking placeholder
   void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  const word = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]
+  void bot.api.sendMessage(chat_id, `${word}…`).then(m => {
+    thinkingMessages.set(chat_id, m.message_id)
+  }).catch(() => {})
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.
   // Telegram only accepts a fixed emoji whitelist — if the user configures
