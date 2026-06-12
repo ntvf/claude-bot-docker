@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, renameSync, realpathSync, chmodSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -395,55 +395,6 @@ function getClaudePid(): number | null {
   return null
 }
 
-function getUsageInfo(): string {
-  const projectsDir = join(homedir(), '.claude', 'projects')
-  let latestFile = ''
-  let latestMtime = 0
-  try {
-    for (const proj of readdirSync(projectsDir)) {
-      const projDir = join(projectsDir, proj)
-      try {
-        for (const f of readdirSync(projDir)) {
-          if (!f.endsWith('.jsonl')) continue
-          const fp = join(projDir, f)
-          const st = statSync(fp)
-          if (st.mtimeMs > latestMtime) { latestMtime = st.mtimeMs; latestFile = fp }
-        }
-      } catch {}
-    }
-  } catch {}
-  if (!latestFile) return 'No session data found.'
-
-  const lines = readFileSync(latestFile, 'utf8').trim().split('\n')
-  let lastUsage: Record<string, number> | null = null
-  let lastModel = ''
-  for (const line of lines.slice(-100).reverse()) {
-    try {
-      const msg = JSON.parse(line)
-      if (msg.message?.role === 'assistant' && msg.message?.usage) {
-        lastUsage = msg.message.usage
-        lastModel = msg.message.model ?? ''
-        break
-      }
-    } catch {}
-  }
-  if (!lastUsage) return 'No usage data in current session.'
-
-  const input = (lastUsage.input_tokens ?? 0) + (lastUsage.cache_read_input_tokens ?? 0) + (lastUsage.cache_creation_input_tokens ?? 0)
-  const output = lastUsage.output_tokens ?? 0
-  const cacheRead = lastUsage.cache_read_input_tokens ?? 0
-  const contextMax = 200000
-  const pct = Math.round((input / contextMax) * 100)
-  const bar = '█'.repeat(Math.round(pct / 5)) + '░'.repeat(20 - Math.round(pct / 5))
-  const modelShort = lastModel.replace('claude-', '').replace(/-\d{8}$/, '')
-
-  return `📊 Context\n` +
-    `${bar} ${pct}%\n` +
-    `Model: ${modelShort}\n` +
-    `In context: ${input.toLocaleString()} / ${contextMax.toLocaleString()}\n` +
-    `Output: ${output.toLocaleString()} tokens\n` +
-    `Cache hit: ${cacheRead.toLocaleString()} tokens`
-}
 
 function injectCommand(cmd: string, chatId: string, userId: string): void {
   mcp.notification({
@@ -839,8 +790,9 @@ bot.on('callback_query:data', async ctx => {
         await ctx.reply('🆕 Clearing conversation…').catch(() => {})
         break
       case 'usage':
-        await ctx.answerCallbackQuery().catch(() => {})
-        await ctx.reply(getUsageInfo()).catch(() => {})
+        injectCommand('/usage', chatId, senderId)
+        await ctx.answerCallbackQuery({ text: '📊 Fetching…' }).catch(() => {})
+        await ctx.reply('📊 Fetching usage…').catch(() => {})
         break
     }
     return
@@ -941,7 +893,10 @@ bot.command('clear', async ctx => {
 
 bot.command('usage', async ctx => {
   if (!dmCommandGate(ctx)) return
-  await ctx.reply(getUsageInfo())
+  const chatId = String(ctx.chat!.id)
+  const userId = String(ctx.from!.id)
+  injectCommand('/usage', chatId, userId)
+  await ctx.reply('📊 Fetching usage…')
 })
 
 bot.command('model', async ctx => {
