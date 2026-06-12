@@ -1242,6 +1242,15 @@ void (async () => {
           void bot.api.setChatMenuButton({
             menu_button: { type: 'commands' },
           }).catch(() => {})
+          // Notify allowlisted users on (re)start with active model
+          try {
+            const cfg = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8'))
+            const model = (cfg.model ?? 'default').replace('claude-', '').replace(/-\d{8}$/, '')
+            const access = loadAccess()
+            for (const chatId of access.allowFrom) {
+              void bot.api.sendMessage(chatId, `✅ Session started — model: ${model}`).catch(() => {})
+            }
+          } catch {}
           void bot.api.setMyCommands(
             [
               { command: 'start', description: 'Welcome and setup guide' },
