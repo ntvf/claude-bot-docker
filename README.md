@@ -52,27 +52,25 @@ ExecStop=/usr/bin/docker stop claude-telegram
 WantedBy=multi-user.target
 ```
 
-## Auto-update (GitHub webhook)
+## Auto-update (polling, NAT-friendly)
 
-Pushes to `main` automatically rebuild the image and restart the service.
+Polls GitHub every 5 minutes and rebuilds + restarts on new commits to `main`. No inbound ports required.
 
 ```bash
-# 1. Copy auto-update files
+# 1. Install files
 cp auto-update/claude-telegram-updater.service /etc/systemd/system/
-cp auto-update/.env.example /opt/claude-telegram/auto-update/.env
-# Edit .env — set GITHUB_WEBHOOK_SECRET
+cp auto-update/claude-telegram-updater.timer   /etc/systemd/system/
+chmod +x auto-update/poll-update.sh
 
 # 2. Enable
-systemctl enable --now claude-telegram-updater
+systemctl daemon-reload
+systemctl enable --now claude-telegram-updater.timer
 
-# 3. GitHub repo → Settings → Webhooks
-#    URL: http://<server-ip>:9876/webhook
-#    Content type: application/json
-#    Secret: same as GITHUB_WEBHOOK_SECRET
-#    Event: push
+# Check status
+systemctl list-timers claude-telegram-updater
 ```
 
-**Is it safe?** The webhook verifies GitHub's HMAC signature. Only pushes from your repo trigger a rebuild. Since the container runs in Sysbox, a malicious Dockerfile `RUN` step can't escape to the host — but it could still run arbitrary commands during `docker build` on the host layer. Keep your repo access controlled.
+**Is it safe?** Only your repo is polled. Since the container runs in Sysbox, a malicious Dockerfile `RUN` step can't escape to the host — but it could run arbitrary commands during `docker build` on the host layer. Keep push access to `main` controlled.
 
 ## First-time setup
 

@@ -455,11 +455,6 @@ function injectCommand(cmd: string, chatId: string, userId: string): void {
   }).catch(() => {})
 }
 
-const CTRL_KEYBOARD = new InlineKeyboard()
-  .text('⏹ Stop', 'ctrl:stop')
-  .text('🗜 Compact', 'ctrl:compact')
-  .text('🆕 Clear', 'ctrl:clear')
-  .text('📊 Usage', 'ctrl:usage')
 
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -635,11 +630,9 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
               reply_to != null &&
               replyMode !== 'off' &&
               (replyMode === 'all' || i === 0)
-            const isLastChunk = i === chunks.length - 1
             const sent = await bot.api.sendMessage(chat_id, chunks[i], {
               ...(shouldReplyTo ? { reply_parameters: { message_id: reply_to } } : {}),
               ...(parseMode ? { parse_mode: parseMode } : {}),
-              ...(isLastChunk ? { reply_markup: CTRL_KEYBOARD } : {}),
             })
             sentIds.push(sent.message_id)
           }
@@ -1224,6 +1217,9 @@ void (async () => {
           attempt = 0
           botUsername = info.username
           process.stderr.write(`telegram channel: polling as @${info.username}\n`)
+          void bot.api.setChatMenuButton({
+            menu_button: { type: 'commands' },
+          }).catch(() => {})
           void bot.api.setMyCommands(
             [
               { command: 'start', description: 'Welcome and setup guide' },
