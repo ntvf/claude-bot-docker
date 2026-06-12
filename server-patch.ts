@@ -20,6 +20,7 @@ import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'gramm
 import type { ReactionTypeEmoji } from 'grammy/types'
 import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, renameSync, realpathSync, chmodSync, existsSync, statSync } from 'fs'
+import { execSync } from 'child_process'
 import { homedir } from 'os'
 import { join, extname, sep } from 'path'
 
@@ -397,6 +398,26 @@ function getClaudePid(): number | null {
 
 
 function getUsageInfo(): string {
+  // Rate limits from claude CLI
+  let rateLimitsText = ''
+  try {
+    const raw = execSync('claude -p /usage 2>&1', {
+      timeout: 10000,
+      encoding: 'utf8',
+      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    })
+    const clean = raw.replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, '')
+    const sessionMatch = clean.match(/Current session:\s*(.+)/)
+    const weekMatch = clean.match(/Current week[^:]*:\s*(.+)/)
+    if (sessionMatch || weekMatch) {
+      const parts: string[] = ['📈 Rate limits']
+      if (sessionMatch) parts.push(`Session: ${sessionMatch[1].trim()}`)
+      if (weekMatch) parts.push(`Week: ${weekMatch[1].trim()}`)
+      rateLimitsText = parts.join('\n')
+    }
+  } catch {}
+
+  // Context window from JSONL
   const projectsDir = join(homedir(), '.claude', 'projects')
   let latestFile = ''
   let latestMtime = 0
@@ -413,42 +434,45 @@ function getUsageInfo(): string {
       } catch {}
     }
   } catch {}
-  if (!latestFile) return 'No session data found.'
 
-  const lines = readFileSync(latestFile, 'utf8').trim().split('\n')
-  let lastUsage: Record<string, number> | null = null
-  let lastModel = ''
-  for (const line of lines.slice(-100).reverse()) {
-    try {
-      const msg = JSON.parse(line)
-      if (msg.message?.role === 'assistant' && msg.message?.usage) {
-        lastUsage = msg.message.usage
-        lastModel = msg.message.model ?? ''
-        break
-      }
-    } catch {}
+  let contextPart = ''
+  if (latestFile) {
+    const lines = readFileSync(latestFile, 'utf8').trim().split('\n')
+    let lastUsage: Record<string, number> | null = null
+    let lastModel = ''
+    for (const line of lines.slice(-100).reverse()) {
+      try {
+        const msg = JSON.parse(line)
+        if (msg.message?.role === 'assistant' && msg.message?.usage) {
+          lastUsage = msg.message.usage
+          lastModel = msg.message.model ?? ''
+          break
+        }
+      } catch {}
+    }
+    if (lastUsage) {
+      const input = (lastUsage.input_tokens ?? 0) + (lastUsage.cache_read_input_tokens ?? 0) + (lastUsage.cache_creation_input_tokens ?? 0)
+      const output = lastUsage.output_tokens ?? 0
+      const cacheRead = lastUsage.cache_read_input_tokens ?? 0
+      const contextMax = 200000
+      const pct = Math.round((input / contextMax) * 100)
+      const filled = Math.round(pct / 5)
+      const bar = '█'.repeat(filled) + '░'.repeat(20 - filled)
+      const modelShort = lastModel.replace('claude-', '').replace(/-\d{8}$/, '')
+      contextPart = `📊 Context (${modelShort})\n${bar} ${pct}%\n` +
+        `In context: ${input.toLocaleString()} / ${contextMax.toLocaleString()} tokens\n` +
+        `Output: ${output.toLocaleString()} | Cache hit: ${cacheRead.toLocaleString()}`
+    }
   }
-  if (!lastUsage) return 'No usage data in current session.'
 
-  const input = (lastUsage.input_tokens ?? 0) + (lastUsage.cache_read_input_tokens ?? 0) + (lastUsage.cache_creation_input_tokens ?? 0)
-  const output = lastUsage.output_tokens ?? 0
-  const cacheRead = lastUsage.cache_read_input_tokens ?? 0
-  const contextMax = 200000
-  const pct = Math.round((input / contextMax) * 100)
-  const filled = Math.round(pct / 5)
-  const bar = '█'.repeat(filled) + '░'.repeat(20 - filled)
-  const modelShort = lastModel.replace('claude-', '').replace(/-\d{8}$/, '')
-
-  return `📊 Context (${modelShort})\n${bar} ${pct}%\n` +
-    `In context: ${input.toLocaleString()} / ${contextMax.toLocaleString()} tokens\n` +
-    `Output: ${output.toLocaleString()} | Cache hit: ${cacheRead.toLocaleString()}`
+  return [rateLimitsText, contextPart].filter(Boolean).join('\n\n') || 'No usage data available.'
 }
 
 function killAndRestart(): void {
   const pid = getClaudePid()
   if (pid) { try { process.kill(pid, 'SIGKILL') } catch {} }
-  // Fallback: kill own parent (script wrapper) so systemd restarts the container
-  setTimeout(() => { try { process.kill(process.ppid, 'SIGKILL') } catch {} }, 500)
+  // Exit self — entrypoint supervisor loop detects this and restarts Claude
+  setTimeout(() => { process.exit(0) }, 500)
 }
 
 function setModel(model: string): void {

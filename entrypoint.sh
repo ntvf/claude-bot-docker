@@ -55,4 +55,8 @@ Always use the **google-surf MCP** for web searches. Do not use the built-in Web
 MDEOF
 fi
 
-exec script -qfc "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official" /dev/null
+while true; do
+  script -qfc "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official" /dev/null
+  echo "[supervisor] Claude exited — restarting in 3s…"
+  sleep 3
+done
