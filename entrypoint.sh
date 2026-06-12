@@ -18,28 +18,39 @@ for MCP_FILE in "$PLUGIN_CACHE/.mcp.json" "$PLUGIN_MKT/.mcp.json"; do
   fi
 done
 
-# Inject google-surf-mcp into settings.json mcpServers
+# Inject google-surf-mcp into settings.json and mcp.json
 python3 - <<'PYEOF'
 import json, os
+
+SURF_ENTRY = {
+    'command': '/usr/bin/google-surf-mcp',
+    'args': [],
+    'env': {'SURF_CLOUD_MODE': 'true'}
+}
+
+# settings.json
 path = os.path.expanduser('~/.claude/settings.json')
 try:
     cfg = json.load(open(path))
 except Exception:
     cfg = {}
-cfg.setdefault('mcpServers', {})['google-surf'] = {
-    'command': '/usr/bin/google-surf-mcp',
-    'args': [],
-    'env': {'SURF_CLOUD_MODE': 'true'}
-}
-# Allow the new MCP tool patterns
+cfg.setdefault('mcpServers', {})['google-surf'] = SURF_ENTRY
 cfg.setdefault('permissions', {}).setdefault('allow', [])
 allow = cfg['permissions']['allow']
 if 'mcp__google-surf__*' not in allow:
     allow.append('mcp__google-surf__*')
-# Remove WebSearch auto-allow so Claude prefers google-surf MCP
 if 'WebSearch(*)' in allow:
     allow.remove('WebSearch(*)')
 json.dump(cfg, open(path, 'w'), indent=2)
+
+# mcp.json (separate file Claude also reads)
+mcp_path = os.path.expanduser('~/.claude/mcp.json')
+try:
+    mcp = json.load(open(mcp_path))
+except Exception:
+    mcp = {}
+mcp.setdefault('mcpServers', {})['google-surf'] = SURF_ENTRY
+json.dump(mcp, open(mcp_path, 'w'), indent=2)
 PYEOF
 
 # Ensure CLAUDE.md has correct environment notes (idempotent per section)
