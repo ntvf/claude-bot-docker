@@ -42,17 +42,32 @@ if 'WebSearch(*)' in allow:
 json.dump(cfg, open(path, 'w'), indent=2)
 PYEOF
 
-# Ensure CLAUDE.md has correct environment notes (idempotent)
+# Ensure CLAUDE.md has correct environment notes (idempotent per section)
 CLAUDE_MD="$HOME/CLAUDE.md"
 if ! grep -q 'Active MCP tools' "$CLAUDE_MD" 2>/dev/null; then
 cat >> "$CLAUDE_MD" <<'MDEOF'
 
 ## Active MCP tools
 Available MCP servers: **telegram** (reply/react/edit/download) and **google-surf** (web search).
+MDEOF
+fi
+if ! grep -q 'Web search' "$CLAUDE_MD" 2>/dev/null; then
+cat >> "$CLAUDE_MD" <<'MDEOF'
 
 ## Web search
-Always use the **google-surf MCP** for web searches. Do not use the built-in WebSearch tool.
+ALWAYS use the **google-surf MCP** (`mcp__google-surf__search`) for any web search or URL fetch.
+NEVER use the built-in WebSearch tool — it is disabled. If google-surf is not yet connected, wait or inform the user rather than falling back to WebSearch.
 MDEOF
+fi
+
+# Pre-warm google-surf-mcp headless Chrome profile (first boot only, takes ~35s)
+if [ ! -d "$HOME/.google-surf-mcp" ]; then
+  echo "[entrypoint] Pre-warming google-surf-mcp profile (~35s)…"
+  npx google-surf-mcp &
+  SURF_PID=$!
+  sleep 40
+  kill "$SURF_PID" 2>/dev/null || true
+  echo "[entrypoint] google-surf-mcp profile ready"
 fi
 
 while true; do
