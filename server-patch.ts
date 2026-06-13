@@ -519,10 +519,12 @@ function getUsageInfo(): string {
   return [rateLimitsText, contextPart].filter(Boolean).join('\n\n') || 'No usage data available.'
 }
 
-function killAndRestart(): void {
+function killAndRestart(clearSession = false): void {
+  if (clearSession) {
+    try { writeFileSync('/tmp/claude_clear_session', '1') } catch {}
+  }
   const pid = getClaudePid()
   if (pid) { try { process.kill(pid, 'SIGKILL') } catch {} }
-  // Exit self — entrypoint supervisor loop detects this and restarts Claude
   setTimeout(() => { process.exit(0) }, 500)
 }
 
@@ -828,12 +830,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
       }
       case 'edit_message': {
         assertAllowedChat(args.chat_id as string)
-        const editFormat = (args.format as string | undefined) ?? 'text'
-        const editParseMode = editFormat === 'markdownv2' ? 'MarkdownV2' as const : undefined
+        const editFormat = (args.format as string | undefined) ?? 'auto'
+        const editParseMode = (editFormat === 'markdownv2' || editFormat === 'auto') ? 'MarkdownV2' as const : undefined
+        const editText = editFormat === 'auto' ? toMarkdownV2(args.text as string) : args.text as string
         const edited = await bot.api.editMessageText(
           args.chat_id as string,
           Number(args.message_id),
-          args.text as string,
+          editText,
           ...(editParseMode ? [{ parse_mode: editParseMode }] : []),
         )
         const id = typeof edited === 'object' ? edited.message_id : args.message_id
@@ -971,7 +974,7 @@ bot.on('callback_query:data', async ctx => {
       case 'clear':
         await ctx.answerCallbackQuery({ text: '🆕 Restarting…' }).catch(() => {})
         await ctx.reply('🆕 Clearing session — restarting…').catch(() => {})
-        killAndRestart()
+        killAndRestart(true)
         break
       case 'usage':
         await ctx.answerCallbackQuery().catch(() => {})
@@ -1073,7 +1076,7 @@ bot.command('compact', async ctx => {
 bot.command('clear', async ctx => {
   if (!dmCommandGate(ctx)) return
   await ctx.reply('🆕 Clearing session — restarting…')
-  killAndRestart()
+  killAndRestart(true)
 })
 
 bot.command('usage', async ctx => {
@@ -1269,6 +1272,9 @@ async function handleInbound(
   const chat_id = String(ctx.chat!.id)
   const msgId = ctx.message?.message_id
 
+  // Persist last active chat so supervisor can send status check on resume
+  try { writeFileSync('/tmp/last_chat_id', chat_id, { mode: 0o600 }) } catch {}
+
   // Permission-reply intercept: if this looks like "yes xxxxx" for a
   // pending permission request, emit the structured event instead of
   // relaying as chat. The sender is already gate()-approved at this point
@@ -1388,6 +1394,30 @@ void (async () => {
             const access = loadAccess()
             for (const chatId of access.allowFrom) {
               void bot.api.sendMessage(chatId, `✅ Session started — model: ${model}`).catch(() => {})
+            }
+          } catch {}
+          // On crash-resume, inject status check so Claude reports progress
+          try {
+            const statusFile = '/tmp/send_status_on_start'
+            if (existsSync(statusFile)) {
+              const resumeChatId = readFileSync(statusFile, 'utf8').trim()
+              rmSync(statusFile, { force: true })
+              if (resumeChatId) {
+                setTimeout(() => {
+                  mcp.notification({
+                    method: 'notifications/claude/channel',
+                    params: {
+                      content: 'what is the status? (auto-injected after restart)',
+                      meta: {
+                        chat_id: resumeChatId,
+                        user: 'system',
+                        user_id: resumeChatId,
+                        ts: new Date().toISOString(),
+                      },
+                    },
+                  }).catch(() => {})
+                }, 10000)
+              }
             }
           } catch {}
           void bot.api.setMyCommands(
