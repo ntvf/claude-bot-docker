@@ -79,7 +79,15 @@ fi
 
 
 while true; do
-  script -qfc "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official" /dev/null
+  # Resume latest session (survives crashes/restarts; after /clear the newest JSONL is the cleared one)
+  SESSION_DIR="$HOME/.claude/projects/-home-claude"
+  LATEST_SESSION=$(ls -t "$SESSION_DIR"/*.jsonl 2>/dev/null | head -1 | xargs -I{} basename {} .jsonl 2>/dev/null || true)
+
+  if [ -n "$LATEST_SESSION" ]; then
+    script -qfc "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official --resume $LATEST_SESSION" /dev/null
+  else
+    script -qfc "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official" /dev/null
+  fi
   echo "[supervisor] Claude exited — restarting in 3s…"
   sleep 3
 done
