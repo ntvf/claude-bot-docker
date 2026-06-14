@@ -68,6 +68,7 @@ RUN useradd -m -s /bin/bash claude \
 # Patched plugin server + entrypoint
 COPY server-patch.ts /opt/server-patch.ts
 COPY entrypoint.sh /entrypoint.sh
+COPY launch.py /opt/launch.py
 RUN chmod +x /entrypoint.sh
 
 USER claude

@@ -41,12 +41,14 @@ while true; do
 
   BASE_CMD="claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official"
 
+  # launch.py gives Claude a TTY and explicitly dismisses the trust + bypass
+  # prompts (the bypass default is "No, exit", so a blind Enter would quit).
   if [ -n "$LATEST_SESSION" ]; then
     [ -f /tmp/last_chat_id ] && cp /tmp/last_chat_id /tmp/send_status_on_start || true
-    { sleep 5; printf '\n'; tail -f /dev/null; } | script -qfc "$BASE_CMD --resume $LATEST_SESSION" /dev/null
+    python3 /opt/launch.py $BASE_CMD --resume "$LATEST_SESSION"
   else
     rm -f /tmp/send_status_on_start
-    { sleep 5; printf '\n'; tail -f /dev/null; } | script -qfc "$BASE_CMD" /dev/null
+    python3 /opt/launch.py $BASE_CMD
   fi
   echo "[supervisor] Claude exited — restarting in 3s…"
   sleep 3
