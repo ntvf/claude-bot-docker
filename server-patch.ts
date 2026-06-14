@@ -500,20 +500,18 @@ function getUsageInfo(): string {
     }
   } catch {}
 
-  // Context window from JSONL — collect all files sorted newest-first,
-  // then pick the first one that actually has assistant usage data
+  // Context window from JSONL — only the main Telegram session project
+  // (the dir Claude runs in, e.g. /home/claude -> "-home-claude"). Scanning
+  // all projects would pick up the keep-alive pinger's throwaway temp sessions,
+  // which are newer but irrelevant.
   const projectsDir = join(homedir(), '.claude', 'projects')
+  const mainProj = join(projectsDir, homedir().replace(/\//g, '-'))
   const allJsonl: { fp: string; mtime: number }[] = []
   try {
-    for (const proj of readdirSync(projectsDir)) {
-      const projDir = join(projectsDir, proj)
-      try {
-        for (const f of readdirSync(projDir)) {
-          if (!f.endsWith('.jsonl')) continue
-          const fp = join(projDir, f)
-          try { allJsonl.push({ fp, mtime: statSync(fp).mtimeMs }) } catch {}
-        }
-      } catch {}
+    for (const f of readdirSync(mainProj)) {
+      if (!f.endsWith('.jsonl')) continue
+      const fp = join(mainProj, f)
+      try { allJsonl.push({ fp, mtime: statSync(fp).mtimeMs }) } catch {}
     }
   } catch {}
   allJsonl.sort((a, b) => b.mtime - a.mtime)

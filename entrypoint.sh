@@ -36,11 +36,13 @@ keepalive() {
     echo "[keepalive] next ping in ${wait}s"
     sleep "$wait"
     local w="${words[$RANDOM % ${#words[@]}]}"
-    local d; d="$(mktemp -d)"
+    # Fixed dir so it reuses one throwaway session project instead of
+    # spawning a new ~/.claude/projects entry on every ping.
+    local d=/tmp/keepalive
+    mkdir -p "$d"
     ( cd "$d" && timeout 60 claude --strict-mcp-config \
         --model "${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}" \
         -p "$w" >/dev/null 2>&1 ) || true
-    rm -rf "$d" 2>/dev/null || true
     echo "[keepalive] pinged: $w"
   done
 }
