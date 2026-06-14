@@ -24,31 +24,36 @@ cat > "$HOME/CLAUDE.md" <<'MDEOF'
 Telegram bot. Replies only reach the user via the `reply` tool — use `chat_id` from the inbound message. Every reply is auto-converted to MarkdownV2: write normal markdown (`**bold**`, `_italic_`, `` `code` ``, fenced code blocks). Default `format` is `auto`; only set `format: "text"` for fully literal content.
 MDEOF
 
-# Keep-alive pinger: periodically nudge Claude with a tiny prompt so the
-# rate-limit/session window stays active. Runs in a throwaway temp dir.
-# --strict-mcp-config starts ZERO MCP servers, so it never spawns a second
-# telegram bun server that would kill the running bot (same trick as /usage).
+# Keep-alive pinger: periodically nudge the account so the rate-limit/session
+# window stays active. Calls the API directly with the stored OAuth token
+# (~9 tokens/ping) instead of `claude -p`, which loads the full agent harness
+# (~20k cached tokens). Token is refreshed by the main session; on expiry the
+# ping just gets a 401 (harmless).
 keepalive() {
   local words=("hey" "hello" "hi" "thanks" "thank you" "yo" "good day" "cheers" "morning" "howdy")
   local lo="${KEEPALIVE_MIN:-300}" hi="${KEEPALIVE_MAX:-900}"
+  local model="${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}"
   while true; do
     local wait=$(( RANDOM % (hi - lo + 1) + lo ))
     echo "[keepalive] next ping in ${wait}s"
     sleep "$wait"
     local w="${words[$RANDOM % ${#words[@]}]}"
-    # Fixed dir so it reuses one throwaway session project instead of
-    # spawning a new ~/.claude/projects entry on every ping.
-    local d=/tmp/keepalive
-    mkdir -p "$d"
-    ( cd "$d" && timeout 60 claude --strict-mcp-config \
-        --model "${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}" \
-        -p "$w" >/dev/null 2>&1 ) || true
-    echo "[keepalive] pinged: $w"
+    local tok
+    tok=$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.claude/.credentials.json')))['claudeAiOauth']['accessToken'])" 2>/dev/null)
+    if [ -z "$tok" ]; then echo "[keepalive] no token, skip"; continue; fi
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://api.anthropic.com/v1/messages \
+      -H "authorization: Bearer $tok" \
+      -H "anthropic-version: 2023-06-01" \
+      -H "anthropic-beta: oauth-2025-04-20" \
+      -H "content-type: application/json" \
+      -d "{\"model\":\"$model\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"$w\"}]}" 2>/dev/null)
+    echo "[keepalive] pinged '$w' -> HTTP $code"
   done
 }
 if [ "${KEEPALIVE_ENABLED:-true}" = "true" ]; then
   keepalive &
-  echo "[keepalive] enabled — random ${KEEPALIVE_MIN:-300}-${KEEPALIVE_MAX:-900}s, model ${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}"
+  echo "[keepalive] enabled — random ${KEEPALIVE_MIN:-300}-${KEEPALIVE_MAX:-900}s, model ${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}, direct API"
 fi
 
 while true; do
