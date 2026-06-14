@@ -445,6 +445,39 @@ function getClaudePid(): number | null {
 }
 
 
+// Parse a "resets Jun 15, 12:59am (UTC)" fragment into a future Date (UTC).
+function parseResetUTC(s: string): Date | null {
+  const m = s.match(/resets\s+([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{1,2}):(\d{2})\s*(am|pm)?/i)
+  if (!m) return null
+  const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+  const mon = months.indexOf(m[1].toLowerCase())
+  if (mon < 0) return null
+  const day = +m[2]
+  let hour = +m[3]
+  const min = +m[4]
+  const ap = (m[5] ?? '').toLowerCase()
+  if (ap === 'pm' && hour !== 12) hour += 12
+  if (ap === 'am' && hour === 12) hour = 0
+  const now = new Date()
+  let d = new Date(Date.UTC(now.getUTCFullYear(), mon, day, hour, min))
+  // reset is in the future; if parsed date already passed, it's next year
+  if (d.getTime() < now.getTime() - 60_000) d = new Date(Date.UTC(now.getUTCFullYear() + 1, mon, day, hour, min))
+  return d
+}
+
+// Append "· in 3h 12m" to a rate-limit line based on its reset time.
+function withCountdown(text: string): string {
+  const d = parseResetUTC(text)
+  if (!d) return text
+  let ms = d.getTime() - Date.now()
+  if (ms < 0) ms = 0
+  const totalMin = Math.round(ms / 60_000)
+  const h = Math.floor(totalMin / 60)
+  const mm = totalMin % 60
+  const left = h > 0 ? `${h}h ${mm}m` : `${mm}m`
+  return `${text} · in ${left}`
+}
+
 function getUsageInfo(): string {
   // Rate limits from claude CLI — --strict-mcp-config with no --mcp-config
   // starts zero MCP servers, so no new bun instance spawns and kills us
@@ -460,8 +493,8 @@ function getUsageInfo(): string {
     const weekMatch = clean.match(/Current week[^:]*:\s*(.+)/)
     if (sessionMatch || weekMatch) {
       const parts: string[] = ['📈 Rate limits']
-      if (sessionMatch) parts.push(`Session: ${sessionMatch[1].trim()}`)
-      if (weekMatch) parts.push(`Week: ${weekMatch[1].trim()}`)
+      if (sessionMatch) parts.push(`Session: ${withCountdown(sessionMatch[1].trim())}`)
+      if (weekMatch) parts.push(`Week: ${withCountdown(weekMatch[1].trim())}`)
       rateLimitsText = parts.join('\n')
     }
   } catch {}
@@ -508,7 +541,12 @@ function getUsageInfo(): string {
       const pct = Math.round((input / contextMax) * 100)
       const filled = Math.round(pct / 5)
       const bar = '█'.repeat(filled) + '░'.repeat(20 - filled)
-      const modelShort = lastModel.replace('claude-', '').replace(/-\d{8}$/, '')
+      // Prefer the configured model (same source as /model) so /usage and
+      // /model agree; lastModel from JSONL is the last run, which can be stale
+      // after a model switch.
+      let cfgModel = ''
+      try { cfgModel = JSON.parse(readFileSync(join(homedir(), '.claude', 'settings.json'), 'utf8')).model ?? '' } catch {}
+      const modelShort = (cfgModel || lastModel).replace('claude-', '').replace(/-\d{8}$/, '')
       contextPart = `📊 Context (${modelShort})\n${bar} ${pct}%\n` +
         `In context: ${input.toLocaleString()} / ${contextMax.toLocaleString()} tokens\n` +
         `Output: ${output.toLocaleString()} | Cache hit: ${cacheRead.toLocaleString()}`
