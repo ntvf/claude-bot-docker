@@ -24,6 +24,28 @@ cat > "$HOME/CLAUDE.md" <<'MDEOF'
 Telegram bot. Replies only reach the user via the `reply` tool — use `chat_id` from the inbound message. Every reply is auto-converted to MarkdownV2: write normal markdown (`**bold**`, `_italic_`, `` `code` ``, fenced code blocks). Default `format` is `auto`; only set `format: "text"` for fully literal content.
 MDEOF
 
+# Keep-alive pinger: periodically nudge Claude with a tiny prompt so the
+# rate-limit/session window stays active. Runs in a throwaway temp dir.
+# --strict-mcp-config starts ZERO MCP servers, so it never spawns a second
+# telegram bun server that would kill the running bot (same trick as /usage).
+keepalive() {
+  local words=("hey" "hello" "hi" "thanks" "thank you" "yo" "good day" "cheers" "morning" "howdy")
+  while true; do
+    sleep "${KEEPALIVE_INTERVAL:-1800}"
+    local w="${words[$RANDOM % ${#words[@]}]}"
+    local d; d="$(mktemp -d)"
+    ( cd "$d" && timeout 60 claude --strict-mcp-config \
+        --model "${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}" \
+        -p "$w" >/dev/null 2>&1 ) || true
+    rm -rf "$d" 2>/dev/null || true
+    echo "[keepalive] pinged: $w"
+  done
+}
+if [ "${KEEPALIVE_ENABLED:-true}" = "true" ]; then
+  keepalive &
+  echo "[keepalive] enabled — every ${KEEPALIVE_INTERVAL:-1800}s, model ${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}"
+fi
+
 while true; do
   SESSION_DIR="$HOME/.claude/projects/-home-claude"
 
