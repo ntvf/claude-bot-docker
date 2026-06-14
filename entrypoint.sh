@@ -30,8 +30,11 @@ MDEOF
 # telegram bun server that would kill the running bot (same trick as /usage).
 keepalive() {
   local words=("hey" "hello" "hi" "thanks" "thank you" "yo" "good day" "cheers" "morning" "howdy")
+  local lo="${KEEPALIVE_MIN:-300}" hi="${KEEPALIVE_MAX:-900}"
   while true; do
-    sleep "${KEEPALIVE_INTERVAL:-1800}"
+    local wait=$(( RANDOM % (hi - lo + 1) + lo ))
+    echo "[keepalive] next ping in ${wait}s"
+    sleep "$wait"
     local w="${words[$RANDOM % ${#words[@]}]}"
     local d; d="$(mktemp -d)"
     ( cd "$d" && timeout 60 claude --strict-mcp-config \
@@ -43,7 +46,7 @@ keepalive() {
 }
 if [ "${KEEPALIVE_ENABLED:-true}" = "true" ]; then
   keepalive &
-  echo "[keepalive] enabled — every ${KEEPALIVE_INTERVAL:-1800}s, model ${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}"
+  echo "[keepalive] enabled — random ${KEEPALIVE_MIN:-300}-${KEEPALIVE_MAX:-900}s, model ${KEEPALIVE_MODEL:-claude-haiku-4-5-20251001}"
 fi
 
 while true; do
