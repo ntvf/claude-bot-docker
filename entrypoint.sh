@@ -43,10 +43,10 @@ while true; do
 
   if [ -n "$LATEST_SESSION" ]; then
     [ -f /tmp/last_chat_id ] && cp /tmp/last_chat_id /tmp/send_status_on_start || true
-    script -qfc "$BASE_CMD --resume $LATEST_SESSION" /dev/null
+    { printf '\n'; tail -f /dev/null; } | script -qfc "$BASE_CMD --resume $LATEST_SESSION" /dev/null
   else
     rm -f /tmp/send_status_on_start
-    script -qfc "$BASE_CMD" /dev/null
+    { printf '\n'; tail -f /dev/null; } | script -qfc "$BASE_CMD" /dev/null
   fi
   echo "[supervisor] Claude exited — restarting in 3s…"
   sleep 3
