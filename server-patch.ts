@@ -531,6 +531,7 @@ function killAndRestart(clearSession = false): void {
 // Placeholder "thinking" messages — chat_id → message_id.
 // Sent immediately on inbound; first reply chunk edits instead of sending new.
 const thinkingMessages = new Map<string, number>()
+const thinkingIntervals = new Map<string, ReturnType<typeof setInterval>>()
 
 const THINKING_WORDS = [
   'Scurrying', 'Cooking', 'Pondering', 'Brewing', 'Crafting',
@@ -745,7 +746,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             let sent
             // For the first chunk, edit the thinking placeholder if present
             const thinkingId = i === 0 ? thinkingMessages.get(chat_id) : undefined
-            if (thinkingId) thinkingMessages.delete(chat_id)
+            if (thinkingId) {
+              thinkingMessages.delete(chat_id)
+              const iv = thinkingIntervals.get(chat_id)
+              if (iv) { clearInterval(iv); thinkingIntervals.delete(chat_id) }
+            }
             if (thinkingId) {
               try {
                 const edited = await bot.api.editMessageText(
@@ -1112,30 +1117,6 @@ bot.command('model', async ctx => {
   killAndRestart()
 })
 
-const GOAL_FILE = join(STATE_DIR, 'goal.txt')
-
-bot.command('goal', async ctx => {
-  if (!dmCommandGate(ctx)) return
-  const arg = ctx.match?.trim()
-  if (!arg) {
-    // Show current goal
-    try {
-      const current = readFileSync(GOAL_FILE, 'utf8').trim()
-      await ctx.reply(`Current goal:\n\n${current}\n\nSend /goal <text> to change, /goal clear to remove.`)
-    } catch {
-      await ctx.reply('No goal set. Send /goal <text> to set one.')
-    }
-    return
-  }
-  if (arg === 'clear') {
-    try { rmSync(GOAL_FILE) } catch {}
-    await ctx.reply('Goal cleared.')
-    return
-  }
-  writeFileSync(GOAL_FILE, arg, { mode: 0o600 })
-  await ctx.reply(`Goal set:\n\n${arg}`)
-})
-
 bot.on('message:text', async ctx => {
   await handleInbound(ctx, ctx.message.text, undefined)
 })
@@ -1311,18 +1292,16 @@ async function handleInbound(
     }
   }
 
-  // Prepend persistent goal if set
-  try {
-    const goal = readFileSync(GOAL_FILE, 'utf8').trim()
-    if (goal) text = `[Goal: ${goal}]\n\n${text}`
-  } catch {}
-
-  // Typing indicator + thinking placeholder
+  // Typing indicator + animated thinking placeholder
   void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
   const word = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]
-  const emoji = THINKING_EMOJI[Math.floor(Math.random() * THINKING_EMOJI.length)]
-  void bot.api.sendMessage(chat_id, `${word}… ${emoji}`).then(m => {
+  const pickEmoji = () => THINKING_EMOJI[Math.floor(Math.random() * THINKING_EMOJI.length)]
+  void bot.api.sendMessage(chat_id, `${word}… ${pickEmoji()}`).then(m => {
     thinkingMessages.set(chat_id, m.message_id)
+    const iv = setInterval(() => {
+      bot.api.editMessageText(chat_id, m.message_id, `${word}… ${pickEmoji()}`).catch(() => {})
+    }, 1000)
+    thinkingIntervals.set(chat_id, iv)
   }).catch(() => {})
 
   // Ack reaction — lets the user know we're processing. Fire-and-forget.

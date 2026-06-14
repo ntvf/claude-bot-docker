@@ -58,8 +58,8 @@ RUN pip3 install --break-system-packages requests httpx beautifulsoup4
 # Bun (required by telegram@claude-plugins-official MCP server)
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
 
-# Claude Code + google-surf-mcp
-RUN npm install -g @anthropic-ai/claude-code google-surf-mcp
+# Claude Code
+RUN npm install -g @anthropic-ai/claude-code
 
 # Non-root user with passwordless sudo — safe inside Sysbox isolation
 RUN useradd -m -s /bin/bash claude \
