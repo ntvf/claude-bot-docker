@@ -18,11 +18,19 @@ for MCP_FILE in "$PLUGIN_CACHE/.mcp.json" "$PLUGIN_MKT/.mcp.json"; do
   fi
 done
 
-# Write minimal CLAUDE.md (overwrites every start to stay current)
-cat > "$HOME/CLAUDE.md" <<'MDEOF'
+# Claude runs in a dedicated workspace (not $HOME) so its scratch files stay
+# out of the home dir / dotfiles, and /clear can wipe them.
+WORK="$HOME/work"
+INBOX="$HOME/.claude/channels/telegram/inbox"
+mkdir -p "$WORK"
+
+write_claude_md() {
+  cat > "$WORK/CLAUDE.md" <<'MDEOF'
 ## Environment
 Telegram bot. Replies only reach the user via the `reply` tool — use `chat_id` from the inbound message. Every reply is auto-converted to MarkdownV2: write normal markdown (`**bold**`, `_italic_`, `` `code` ``, fenced code blocks). Default `format` is `auto`; only set `format: "text"` for fully literal content.
 MDEOF
+}
+write_claude_md
 
 # Keep-alive pinger: periodically nudge the account so the rate-limit/session
 # window stays active. Calls the API directly with the stored OAuth token
@@ -57,13 +65,19 @@ if [ "${KEEPALIVE_ENABLED:-true}" = "true" ]; then
 fi
 
 while true; do
-  SESSION_DIR="$HOME/.claude/projects/-home-claude"
+  # cwd "/home/claude/work" -> project dir "-home-claude-work"
+  SESSION_DIR="$HOME/.claude/projects/-home-claude-work"
 
-  # /clear writes this marker — skip resume so session starts fresh
+  # /clear writes this marker — skip resume AND wipe the workspace + inbox so
+  # files Claude worked on don't accumulate.
   SHOULD_RESUME=true
   if [ -f /tmp/claude_clear_session ]; then
     rm -f /tmp/claude_clear_session
     SHOULD_RESUME=false
+    rm -rf "${WORK:?}"/* "${WORK:?}"/.[!.]* 2>/dev/null || true
+    rm -rf "${INBOX:?}"/* 2>/dev/null || true
+    write_claude_md
+    echo "[supervisor] /clear — workspace + inbox wiped"
   fi
 
   LATEST_SESSION=""
@@ -72,6 +86,8 @@ while true; do
   fi
 
   BASE_CMD="claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official"
+
+  cd "$WORK" || cd "$HOME"
 
   # launch.py gives Claude a TTY and explicitly dismisses the trust + bypass
   # prompts (the bypass default is "No, exit", so a blind Enter would quit).

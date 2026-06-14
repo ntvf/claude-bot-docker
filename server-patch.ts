@@ -505,7 +505,8 @@ function getUsageInfo(): string {
   // all projects would pick up the keep-alive pinger's throwaway temp sessions,
   // which are newer but irrelevant.
   const projectsDir = join(homedir(), '.claude', 'projects')
-  const mainProj = join(projectsDir, homedir().replace(/\//g, '-'))
+  // Claude runs in $HOME/work -> project dir "-home-claude-work".
+  const mainProj = join(projectsDir, join(homedir(), 'work').replace(/\//g, '-'))
   const allJsonl: { fp: string; mtime: number }[] = []
   try {
     for (const f of readdirSync(mainProj)) {
