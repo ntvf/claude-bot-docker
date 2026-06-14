@@ -1,0 +1,8 @@
+[Unit]
+Description=Claude Telegram Bot — check for updates and rebuild
+
+[Service]
+Type=oneshot
+ExecStart=/opt/claude-telegram/auto-update/poll-update.sh
+Environment=REPO_DIR=/opt/claude-telegram
+Environment=SERVICE_NAME=claude-telegram
