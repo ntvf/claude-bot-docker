@@ -447,14 +447,15 @@ function getClaudePid(): number | null {
 
 // Parse a "resets Jun 15, 12:59am (UTC)" fragment into a future Date (UTC).
 function parseResetUTC(s: string): Date | null {
-  const m = s.match(/resets\s+([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{1,2}):(\d{2})\s*(am|pm)?/i)
+  // minutes are omitted when on the hour: "1am" as well as "12:59am"
+  const m = s.match(/resets\s+([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
   if (!m) return null
   const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
   const mon = months.indexOf(m[1].toLowerCase())
   if (mon < 0) return null
   const day = +m[2]
   let hour = +m[3]
-  const min = +m[4]
+  const min = m[4] ? +m[4] : 0
   const ap = (m[5] ?? '').toLowerCase()
   if (ap === 'pm' && hour !== 12) hour += 12
   if (ap === 'am' && hour === 12) hour = 0
